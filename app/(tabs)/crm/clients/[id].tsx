@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, Link } from 'expo-router';
 import {
@@ -21,7 +22,7 @@ import { formatPrice } from '../../../../src/features/crm/utils/formatPrice';
 function formatInitials(name?: string | null): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/);
-  if (!parts.length) return '?';  
+  if (!parts.length) return '?';
   const first = parts[0]?.[0] ?? '';
   const second = parts[1]?.[0] ?? '';
   return (first + second).toUpperCase();
@@ -114,9 +115,26 @@ export default function ClientDetailScreen() {
       ) : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          Búsquedas ({searches.length})
-        </Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>
+            Búsquedas ({searches.length})
+          </Text>
+
+          {id ? (
+            <Link
+              href={{
+                pathname: '/(tabs)/crm/clients/[id]/new-search',
+                params: { id: String(id) },
+              }}
+              asChild
+            >
+              <TouchableOpacity style={styles.chipButton}>
+                <Text style={styles.chipButtonText}>Nueva búsqueda</Text>
+              </TouchableOpacity>
+            </Link>
+          ) : null}
+        </View>
+
         {searches.length === 0 ? (
           <Text style={styles.empty}>Este cliente no tiene búsquedas aún.</Text>
         ) : (
@@ -217,7 +235,6 @@ export default function ClientDetailScreen() {
         <Text style={styles.empty}>
           Acá después podemos agregar botones para:
         </Text>
-        <Text style={styles.empty}>• Cargar nueva búsqueda</Text>
         <Text style={styles.empty}>• Crear match con vehículo</Text>
         <Text style={styles.empty}>• Abrir WhatsApp directamente</Text>
       </View>
@@ -279,6 +296,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 6,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8,
+  },
+  chipButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#1f2937',
+  },
+  chipButtonText: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    fontWeight: '600',
   },
   notes: {
     color: '#d1d5db',

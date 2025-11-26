@@ -11,7 +11,7 @@ import {
   Linking,
   TouchableOpacity,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, Link } from 'expo-router';
 import { fetchVehicleById } from '../../../../src/features/crm/api/vehicles';
 import {
   fetchVehicleHistory,
@@ -52,19 +52,11 @@ function formatEventLabel(event: VehicleEvent): string {
 
 function cleanPhoneForWhatsApp(phone?: string | null): string | null {
   if (!phone) return null;
-  // borrar todo lo que no sea número
   const digits = phone.replace(/[^0-9]/g, '');
   if (!digits) return null;
 
-  // si ya viene con 54 al principio, la dejamos
   if (digits.startsWith('54')) return digits;
-
-  // si empieza con 0, lo saco y le pongo 54
-  if (digits.startsWith('0')) {
-    return '54' + digits.slice(1);
-  }
-
-  // si no, asumo que es sin 0 y le antepongo 54
+  if (digits.startsWith('0')) return '54' + digits.slice(1);
   return '54' + digits;
 }
 
@@ -94,7 +86,6 @@ export default function VehicleDetailScreen() {
     setMatchesError(null);
 
     try {
-      // Cargamos todo en paralelo
       const [vehicleData, history, matchesData] = await Promise.all([
         fetchVehicleById(id),
         fetchVehicleHistory(id),
@@ -117,7 +108,6 @@ export default function VehicleDetailScreen() {
       console.error('Error cargando vehículo / historial / matches', e);
       const msg = e?.message || 'Error cargando vehículo';
 
-      // Si el error viene de tablas de historial
       if (
         msg.toLowerCase().includes('vehicle_files') ||
         msg.toLowerCase().includes('vehicle_events') ||
@@ -336,9 +326,25 @@ export default function VehicleDetailScreen() {
 
       {/* CLIENTES INTERESADOS / MATCHES */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          Clientes interesados ({matches.length})
-        </Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>
+            Clientes interesados ({matches.length})
+          </Text>
+
+          {id ? (
+            <Link
+              href={{
+                pathname: '/(tabs)/crm/vehicles/[id]/new-match',
+                params: { id: String(id) },
+              }}
+              asChild
+            >
+              <TouchableOpacity style={styles.chipButton}>
+                <Text style={styles.chipButtonText}>Agregar match</Text>
+              </TouchableOpacity>
+            </Link>
+          ) : null}
+        </View>
 
         {matchesLoading && (
           <View style={styles.inlineLoading}>
@@ -553,6 +559,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8,
+  },
   matchCard: {
     backgroundColor: '#111827',
     borderRadius: 8,
@@ -598,6 +611,17 @@ const styles = StyleSheet.create({
   },
   whatsappText: {
     color: '#f9fafb',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chipButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#1f2937',
+  },
+  chipButtonText: {
+    color: '#e5e7eb',
     fontSize: 12,
     fontWeight: '600',
   },

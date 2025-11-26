@@ -88,7 +88,7 @@ export async function fetchClientSearches(
 }
 
 /**
- * Matches de un cliente (tabla matches, unida a vehicles)
+ * Matches de un cliente (tabla matches, unida a vehicles y clients)
  */
 export async function fetchClientMatches(
   clientId: string
@@ -114,7 +114,7 @@ export async function fetchClientMatches(
 }
 
 /**
- * Matches de un vehículo (tabla matches, unida a clients)
+ * Matches de un vehículo (tabla matches, unida a clients y vehicles)
  */
 export async function fetchVehicleMatches(
   vehicleId: string
@@ -137,4 +137,74 @@ export async function fetchVehicleMatches(
   }
 
   return (data || []) as ClientMatch[];
+}
+
+/**
+ * Crear un match cliente <-> vehículo
+ */
+export async function createClientMatch(input: {
+  client_id: string;
+  vehicle_id: string;
+  match_type?: string | null;
+  notes?: string | null;
+}): Promise<ClientMatch> {
+  const { data, error } = await supabase
+    .from('matches')
+    .insert({
+      client_id: input.client_id,
+      vehicle_id: input.vehicle_id,
+      match_type: input.match_type ?? null,
+      notes: input.notes ?? null,
+    })
+    .select(
+      `
+      *,
+      client:clients(*),
+      vehicle:vehicles(*)
+    `
+    )
+    .single();
+
+  if (error) {
+    console.error('Error creando match', error);
+    throw new Error(error.message || 'Error creando match');
+  }
+
+  return data as ClientMatch;
+}
+
+/**
+ * Crear una búsqueda para un cliente
+ */
+export async function createClientSearch(input: {
+  client_id: string;
+  title?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  year_min?: number | null;
+  year_max?: number | null;
+  price_min?: number | null;
+  price_max?: number | null;
+}): Promise<ClientSearchRequest> {
+  const { data, error } = await supabase
+    .from('search_requests')
+    .insert({
+      client_id: input.client_id,
+      title: input.title ?? null,
+      description: input.description ?? null,
+      brand: input.brand ?? null,
+      year_min: input.year_min ?? null,
+      year_max: input.year_max ?? null,
+      price_min: input.price_min ?? null,
+      price_max: input.price_max ?? null,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Error creando búsqueda', error);
+    throw new Error(error.message || 'Error creando búsqueda');
+  }
+
+  return data as ClientSearchRequest;
 }
