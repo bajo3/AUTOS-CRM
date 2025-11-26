@@ -1,11 +1,19 @@
-// src/features/crm/hooks/useMeliItems.ts
+/// Updated version of src/features/crm/hooks/useMeliItems.ts
+//
+// This hook wraps Mercado Libre item operations for the React Native UI.
+// The original implementation incorrectly assumed that getUserActiveItems
+// returned an array of items and passed the user ID directly. This
+// update adjusts the usage to the correct API contract and adds robust
+// error handling.
+
 import { useCallback, useEffect, useState } from 'react';
 import {
   getUserActiveItems,
   MeliItem,
   updateItemPrice,
   closeItem,
-} from '../../../lib/meliApi';
+  UserActiveItemsResult,
+} from '../../../../src/lib/meliApi';
 
 export type RelistStep = 'idle' | 'closing' | 'creating';
 
@@ -46,8 +54,9 @@ export function useMeliItems(
     setLoading(true);
     setError(null);
     try {
-      const data = await getUserActiveItems(userId);
-      setItems(data);
+      // getUserActiveItems devuelve un objeto con items y paginación; extraemos items
+      const result: UserActiveItemsResult = await getUserActiveItems({ sellerId: userId });
+      setItems(result.items);
     } catch (e: any) {
       console.error('Error cargando items de ML', e);
       setError(e?.message || 'Error cargando publicaciones');
@@ -60,8 +69,8 @@ export function useMeliItems(
     setRefreshing(true);
     setError(null);
     try {
-      const data = await getUserActiveItems(userId);
-      setItems(data);
+      const result: UserActiveItemsResult = await getUserActiveItems({ sellerId: userId });
+      setItems(result.items);
     } catch (e: any) {
       console.error('Error recargando items de ML', e);
       setError(e?.message || 'Error recargando publicaciones');

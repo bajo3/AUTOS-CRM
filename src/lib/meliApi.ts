@@ -1,4 +1,8 @@
-// src/lib/meliApi.ts
+// Updated version of src/lib/meliApi.ts with missing functions implemented.
+//
+// This file retains all original logic for token management and item fetching,
+// and adds helper functions to update an item's price and to close an item.
+
 import { supabase } from './supabaseClient';
 
 const MELI_APP_ID = process.env.EXPO_PUBLIC_MELI_APP_ID;
@@ -248,7 +252,7 @@ type MeliSearchResponse = {
   };
 };
 
-type MeliItem = {
+export type MeliItem = {
   id: string;
   title: string;
   price: number;
@@ -312,7 +316,7 @@ export async function getUserActiveItems(params?: {
   for (const chunk of chunks) {
     const query = chunk.join(',');
     const data = await meliFetch<any[]>(
-      `/items?ids=${query}&attributes=id,title,price,thumbnail,permalink,start_time,stop_time,status`
+      `/items?ids=${query}&attributes=id,title,price,thumbnail,permalink,start_time,stop_time,status,date_created`
     );
 
     // la API responde un array de { code, body }
@@ -327,4 +331,48 @@ export async function getUserActiveItems(params?: {
     items,
     paging: search.paging,
   };
+}
+
+// =======================
+// Nuevas funciones para modificar publicaciones
+// =======================
+
+/**
+ * Actualiza el precio de un ítem en Mercado Libre.
+ * @param itemId ID del ítem que se desea actualizar.
+ * @param newPrice Nuevo valor de precio para la publicación.
+ * @returns La respuesta de la API de Mercado Libre.
+ */
+export async function updateItemPrice(itemId: string, newPrice: number) {
+  if (!itemId) {
+    throw new Error('Debe proporcionar un ID de ítem válido');
+  }
+  if (!Number.isFinite(newPrice) || newPrice <= 0) {
+    throw new Error('El precio debe ser un número mayor a cero');
+  }
+  const body = JSON.stringify({ price: newPrice });
+  return await meliFetch(`/items/${itemId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    rawBody: body,
+  });
+}
+
+/**
+ * Cierra una publicación en Mercado Libre (cambia su estado a 'closed').
+ * Según la API oficial, esto se hace mediante un PUT sobre el recurso /items/{item_id}
+ * enviando el campo `status` con el valor `closed`.
+ * @param itemId ID del ítem que se desea cerrar.
+ * @returns La respuesta de la API de Mercado Libre.
+ */
+export async function closeItem(itemId: string) {
+  if (!itemId) {
+    throw new Error('Debe proporcionar un ID de ítem válido');
+  }
+  const body = JSON.stringify({ status: 'closed' });
+  return await meliFetch(`/items/${itemId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    rawBody: body,
+  });
 }
