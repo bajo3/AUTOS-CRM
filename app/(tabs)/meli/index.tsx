@@ -18,7 +18,6 @@ import {
 } from '../../../src/features/crm/hooks/useMeliItems';
 import MeliItemRow from '../../../src/components/meli/MeliItemRow';
 
-// 👉 NUEVO
 import { useVehicles } from '../../../src/features/crm/hooks/useVehicles';
 import { linkVehicleToMeli } from '../../../src/features/crm/api/vehicles';
 import type { Vehicle } from '../../../src/features/crm/types';
@@ -42,19 +41,16 @@ export default function MeliItemsScreen() {
     setSortMode,
   } = useMeliItems();
 
-  // ----- Modal cambiar precio -----
   const [priceModalVisible, setPriceModalVisible] = useState(false);
   const [priceItemId, setPriceItemId] = useState<string | null>(null);
   const [priceValue, setPriceValue] = useState('');
 
-  // ----- Modal vincular vehículo -----
   const {
     vehicles,
     loading: loadingVehicles,
     error: vehiclesError,
     reload: reloadVehicles,
   } = useVehicles();
-
   const [linkModalVisible, setLinkModalVisible] = useState(false);
   const [linkingItemId, setLinkingItemId] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
@@ -78,6 +74,10 @@ export default function MeliItemsScreen() {
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Error cambiando precio');
     }
+  };
+
+  const handleChangeSort = (mode: SortMode) => {
+    setSortMode(mode);
   };
 
   const openLinkModal = (itemId: string) => {
@@ -105,10 +105,6 @@ export default function MeliItemsScreen() {
     } finally {
       setLinking(false);
     }
-  };
-
-  const handleChangeSort = (mode: SortMode) => {
-    setSortMode(mode);
   };
 
   return (
@@ -154,11 +150,6 @@ export default function MeliItemsScreen() {
         </TouchableOpacity>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {vehiclesError ? (
-        <Text style={styles.error}>Error vehículos: {vehiclesError}</Text>
-      ) : null}
-
       {loading && !items.length ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color="#60a5fa" />
@@ -203,7 +194,7 @@ export default function MeliItemsScreen() {
                   ]
                 )
               }
-              onLinkVehicle={openLinkModal} // 👉 nuevo botón "Vincular auto"
+              onLinkVehicle={openLinkModal}
             />
           )}
           ListEmptyComponent={
@@ -246,7 +237,7 @@ export default function MeliItemsScreen() {
         </View>
       )}
 
-      {/* Modal cambiar precio */}
+      {/* Modal para cambiar precio */}
       <Modal visible={priceModalVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -277,11 +268,15 @@ export default function MeliItemsScreen() {
         </View>
       </Modal>
 
-      {/* Modal vincular vehículo */}
+      {/* Modal para vincular con vehículo */}
       <Modal visible={linkModalVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Vincular a un vehículo</Text>
+
+            {vehiclesError ? (
+              <Text style={styles.error}>{vehiclesError}</Text>
+            ) : null}
 
             {loadingVehicles ? (
               <View style={styles.loadingBox}>
@@ -304,8 +299,7 @@ export default function MeliItemsScreen() {
                         {item.title || item.slug || item.id}
                       </Text>
                       <Text style={styles.vehicleSubtitle}>
-                        {item.brand || ''}{' '}
-                        {item.year ? `· ${item.year}` : ''}
+                        {item.brand || ''} {item.year ? `· ${item.year}` : ''}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -324,7 +318,7 @@ export default function MeliItemsScreen() {
                 onPress={() => setLinkModalVisible(false)}
                 disabled={linking}
               >
-                <Text style={styles.modalButtonTextSecondary}>Cancelar</Text>
+                <Text style={styles.modalButtonTextSecondary}>Cerrar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -349,7 +343,6 @@ const styles = StyleSheet.create({
   },
   sortBar: {
     flexDirection: 'row',
-    gap: 8,
     marginBottom: 8,
   },
   sortChip: {
@@ -359,6 +352,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#374151',
     backgroundColor: '#020617',
+    marginRight: 8,
   },
   sortChipActive: {
     backgroundColor: '#1d4ed8',
@@ -454,12 +448,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     marginTop: 16,
-    gap: 8,
   },
   modalButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 999,
+    marginLeft: 8,
   },
   modalButtonSecondary: {
     backgroundColor: '#020617',
@@ -479,8 +473,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 13,
   },
-
-  // 👉 NUEVO: estilos para filas de vehículos en el modal
   vehicleRow: {
     paddingVertical: 8,
     borderBottomWidth: 1,

@@ -1,142 +1,31 @@
-// app/(tabs)/crm/vehicles/index.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+// app/(tabs)/vehicles/index.tsx
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  RefreshControl,
   TouchableOpacity,
-  Image,
 } from 'react-native';
-import { Link } from 'expo-router';
-import { fetchVehicles } from '../../../../src/features/crm/api/vehicles';
+import { useRouter } from 'expo-router';
+import { useVehicles } from '../../../../src/features/crm/hooks/useVehicles';
+import type { Vehicle } from '../../../../src/features/crm/types';
 
-function formatPrice(value?: number | null): string {
-  if (!value || value <= 0) return '-';
-  try {
-    return value.toLocaleString('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      maximumFractionDigits: 0,
+export default function VehiclesScreen() {
+  const { vehicles, loading, error, reload } = useVehicles();
+  const router = useRouter();
+
+  const handleOpenDetail = (vehicle: Vehicle) => {
+    router.push({
+      pathname: '/(tabs)/vehicles/[id]',
+      params: { id: vehicle.id },
     });
-  } catch {
-    return `$${value.toLocaleString('es-AR')}`;
-  }
-}
-
-// brand + title + year
-function formatTitle(vehicle: any): string {
-  const brand = vehicle.brand || '';
-  const title = vehicle.title || '';
-  const year = vehicle.year ? String(vehicle.year) : '';
-
-  return [brand, title, year].filter(Boolean).join(' ');
-}
-
-// Km • Motor • Caja • Combustible • Puertas
-function formatSubtitle(vehicle: any): string {
-  const km =
-    vehicle.Km != null
-      ? `${Number(vehicle.Km).toLocaleString('es-AR')} km`
-      : null;
-  const motor = vehicle.Motor || null;
-  const caja = vehicle.Caja || null;
-  const combustible = vehicle.Combustible || null;
-  const puertas =
-    vehicle.Puertas != null ? `${vehicle.Puertas} puertas` : null;
-
-  const parts = [km, motor, caja, combustible, puertas].filter(Boolean);
-  return parts.join(' • ');
-}
-
-export default function VehiclesListScreen() {
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchVehicles();
-      setVehicles(data);
-    } catch (e: any) {
-      console.error('Error cargando vehículos', e);
-      setError(e?.message || 'Error cargando vehículos');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const reload = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const data = await fetchVehicles();
-      setVehicles(data);
-    } catch (e: any) {
-      console.error('Error recargando vehículos', e);
-      setError(e?.message || 'Error recargando vehículos');
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const renderItem = ({ item }: { item: any }) => {
-    const title = formatTitle(item);
-    const subtitle = formatSubtitle(item);
-    const priceLabel = formatPrice(item.price ?? null);
-
-    const thumbUri =
-      Array.isArray(item.pictures) && item.pictures.length
-        ? item.pictures[0]
-        : null;
-
-    return (
-      <Link
-        href={{ pathname: '/(tabs)/crm/vehicles/[id]', params: { id: item.id } }}
-        asChild
-      >
-        <TouchableOpacity style={styles.card}>
-          <View style={styles.row}>
-            {thumbUri ? (
-              <Image source={{ uri: thumbUri }} style={styles.thumb} />
-            ) : (
-              <View style={[styles.thumb, styles.thumbPlaceholder]}>
-                <Text style={styles.thumbText}>AUTO</Text>
-              </View>
-            )}
-
-            <View style={styles.cardContent}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {title}
-                </Text>
-                <Text style={styles.cardPrice}>{priceLabel}</Text>
-              </View>
-
-              {subtitle ? (
-                <Text style={styles.cardSubtitle} numberOfLines={2}>
-                  {subtitle}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Link>
-    );
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Vehículos en stock</Text>
+      <Text style={styles.title}>Autos en stock</Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -149,23 +38,62 @@ export default function VehiclesListScreen() {
         <FlatList
           data={vehicles}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={
-            vehicles.length ? styles.listContent : styles.listEmptyContent
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={reload} />
-          }
-          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshing={loading}
+          onRefresh={reload}
+          renderItem={({ item }) => (
+            <VehicleRow vehicle={item} onPress={handleOpenDetail} />
+          )}
           ListEmptyComponent={
             !loading ? (
-              <Text style={styles.emptyText}>
-                No hay vehículos cargados en la tabla "vehicles".
-              </Text>
+              <Text style={styles.empty}>No hay vehículos cargados en el CRM.</Text>
             ) : null
           }
         />
       )}
     </View>
+  );
+}
+
+type RowProps = {
+  vehicle: Vehicle;
+  onPress: (vehicle: Vehicle) => void;
+};
+
+function VehicleRow({ vehicle, onPress }: RowProps) {
+  const linked = !!(vehicle as any).meli_item_id;
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={() => onPress(vehicle)}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {vehicle.title || vehicle.slug || vehicle.id}
+          </Text>
+          <Text style={styles.cardSub}>
+            {vehicle.brand || 'Sin marca'} {vehicle.year ? `· ${vehicle.year}` : ''}
+          </Text>
+        </View>
+
+        {typeof vehicle.price === 'number' && (
+          <Text style={styles.cardPrice}>
+            ${vehicle.price.toLocaleString('es-AR')}
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.cardFooter}>
+        {linked ? (
+          <View style={[styles.badge, styles.badgeLinked]}>
+            <Text style={styles.badgeText}>Vinculado a ML</Text>
+          </View>
+        ) : (
+          <View style={[styles.badge, styles.badgeUnlinked]}>
+            <Text style={styles.badgeText}>Sin ML</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -191,63 +119,59 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 16,
   },
-  listEmptyContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  emptyText: {
+  empty: {
+    marginTop: 32,
     textAlign: 'center',
     color: '#9ca3af',
-    fontSize: 14,
   },
   card: {
     backgroundColor: '#111827',
     borderRadius: 12,
-    padding: 10,
+    padding: 12,
     marginBottom: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  thumb: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#1f2937',
-  },
-  thumbPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbText: {
-    color: '#9ca3af',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cardContent: {
-    flex: 1,
-    justifyContent: 'center',
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 4,
+    alignItems: 'flex-start',
   },
   cardTitle: {
-    flex: 1,
-    color: '#e5e7eb',
+    color: '#f9fafb',
     fontSize: 15,
     fontWeight: '600',
   },
-  cardPrice: {
-    color: '#60a5fa',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  cardSubtitle: {
+  cardSub: {
     color: '#9ca3af',
     fontSize: 12,
+    marginTop: 2,
+  },
+  cardPrice: {
+    color: '#60a5fa',
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  cardFooter: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  badgeLinked: {
+    backgroundColor: '#16a34a33',
+    borderWidth: 1,
+    borderColor: '#16a34a',
+  },
+  badgeUnlinked: {
+    backgroundColor: '#f9731633',
+    borderWidth: 1,
+    borderColor: '#f97316',
+  },
+  badgeText: {
+    color: '#e5e7eb',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

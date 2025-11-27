@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    marginLeft: 6, // reemplaza "gap"
+    marginLeft: 6,
     marginTop: 4,
   },
   buttonDanger: {

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { ColorSchemeName, useColorScheme } from 'react-native';
+import { useColorScheme, ColorSchemeName } from 'react-native';
 
 function getTabBarOptions(colorScheme: ColorSchemeName) {
   const dark = colorScheme === 'dark';
