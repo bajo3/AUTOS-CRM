@@ -1,8 +1,4 @@
-// Updated version of src/lib/meliApi.ts with missing functions implemented.
-//
-// This file retains all original logic for token management and item fetching,
-// and adds helper functions to update an item's price and to close an item.
-
+// src/lib/meliApi.ts
 import { supabase } from './supabaseClient';
 
 const MELI_APP_ID = process.env.EXPO_PUBLIC_MELI_APP_ID;
@@ -32,7 +28,7 @@ async function getTokenRow(): Promise<MeliTokenRow | null> {
     .from('meli_tokens')
     .select('*')
     .limit(1)
-    .maybeSingle(); // 👈 si después querés, podés agregar order('updated_at', { ascending: false })
+    .maybeSingle(); // si después querés, podés agregar order('updated_at', { ascending: false })
 
   if (error) {
     console.error('[meliApi] Error leyendo meli_tokens', error);
@@ -210,7 +206,8 @@ export async function meliFetch<T = any>(
       status: res.status,
       data,
     });
-    const msg = data?.error_description || data?.message || 'Error en Mercado Libre';
+    const msg =
+      data?.error_description || data?.message || 'Error en Mercado Libre';
     throw new Error(msg);
   }
 
@@ -261,6 +258,7 @@ export type MeliItem = {
   start_time?: string;
   stop_time?: string;
   status?: string;
+  // otros campos que puede traer ML
   [key: string]: any;
 };
 
@@ -305,25 +303,21 @@ export async function getUserActiveItems(params?: {
     return { items: [], paging: search.paging };
   }
 
-  // 2) Traer detalles en bloques de hasta 20 ids
-  const chunkSize = 20;
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    chunks.push(ids.slice(i, i + chunkSize));
-  }
-
+  // 2) Traer detalles UNO POR UNO (más simple, sin multiget)
   const items: MeliItem[] = [];
-  for (const chunk of chunks) {
-    const query = chunk.join(',');
-    const data = await meliFetch<any[]>(
-      `/items?ids=${query}&attributes=id,title,price,thumbnail,permalink,start_time,stop_time,status,date_created`
-    );
 
-    // la API responde un array de { code, body }
-    for (const entry of data) {
-      if (entry && entry.body) {
-        items.push(entry.body as MeliItem);
-      }
+  for (const id of ids) {
+    try {
+      const data = await meliFetch<MeliItem>(
+        `/items/${id}?attributes=id,title,price,thumbnail,permalink,start_time,stop_time,status,date_created`
+      );
+
+      // log opcional para chequear que venga title/price
+      // console.log('[ML] ITEM DATA', { id: data.id, title: data.title, price: data.price });
+
+      items.push(data);
+    } catch (e) {
+      console.warn('[ML] Error obteniendo item', id, e);
     }
   }
 
@@ -333,46 +327,86 @@ export async function getUserActiveItems(params?: {
   };
 }
 
+
 // =======================
-// Nuevas funciones para modificar publicaciones
+// Operaciones sobre un item
 // =======================
 
 /**
- * Actualiza el precio de un ítem en Mercado Libre.
- * @param itemId ID del ítem que se desea actualizar.
- * @param newPrice Nuevo valor de precio para la publicación.
- * @returns La respuesta de la API de Mercado Libre.
+ * Actualiza el precio de una publicación.
  */
-export async function updateItemPrice(itemId: string, newPrice: number) {
+export async function updateItemPrice(
+  itemId: string,
+  newPrice: number
+): Promise<MeliItem> {
   if (!itemId) {
-    throw new Error('Debe proporcionar un ID de ítem válido');
+    throw new Error('Falta itemId para actualizar el precio');
   }
-  if (!Number.isFinite(newPrice) || newPrice <= 0) {
-    throw new Error('El precio debe ser un número mayor a cero');
+  if (!newPrice || newPrice <= 0) {
+    throw new Error('Precio inválido para actualizar la publicación');
   }
-  const body = JSON.stringify({ price: newPrice });
-  return await meliFetch(`/items/${itemId}`, {
+
+  const payload = {
+    price: newPrice,
+  };
+
+  const updated = await meliFetch<MeliItem>(`/items/${itemId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    rawBody: body,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    rawBody: JSON.stringify(payload),
   });
+
+  console.log('[meliApi] Precio actualizado OK', { itemId, newPrice });
+  return updated;
 }
 
 /**
- * Cierra una publicación en Mercado Libre (cambia su estado a 'closed').
- * Según la API oficial, esto se hace mediante un PUT sobre el recurso /items/{item_id}
- * enviando el campo `status` con el valor `closed`.
- * @param itemId ID del ítem que se desea cerrar.
- * @returns La respuesta de la API de Mercado Libre.
+ * Cierra una publicación (status = closed).
  */
-export async function closeItem(itemId: string) {
+export async function closeItem(itemId: string): Promise<MeliItem> {
   if (!itemId) {
-    throw new Error('Debe proporcionar un ID de ítem válido');
+    throw new Error('Falta itemId para cerrar la publicación');
   }
-  const body = JSON.stringify({ status: 'closed' });
-  return await meliFetch(`/items/${itemId}`, {
+
+  const payload = {
+    status: 'closed',
+  };
+
+  const updated = await meliFetch<MeliItem>(`/items/${itemId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    rawBody: body,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    rawBody: JSON.stringify(payload),
   });
+
+  console.log('[meliApi] Publicación cerrada OK', { itemId });
+  return updated;
+}
+
+/**
+ * Relista una publicación ya cerrada (republicar).
+ * Usa el endpoint oficial /items/{id}/relist.
+ */
+export async function relistItem(itemId: string): Promise<MeliItem> {
+  if (!itemId) {
+    throw new Error('Falta itemId para relistar la publicación');
+  }
+
+  const relisted = await meliFetch<MeliItem>(`/items/${itemId}/relist`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    rawBody: JSON.stringify({}),
+  });
+
+  console.log('[meliApi] Publicación relistada OK', {
+    oldItemId: itemId,
+    newItemId: relisted.id,
+  });
+
+  return relisted;
 }

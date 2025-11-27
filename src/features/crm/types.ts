@@ -2,6 +2,8 @@
 export type VehicleStatus = 'available' | 'reserved' | 'sold' | 'deleted' | string;
 
 export type Vehicle = {
+  slug: string;
+  title: string;
   id: string;            // UUID o text
   stock_code?: string | null;
   brand?: string | null;

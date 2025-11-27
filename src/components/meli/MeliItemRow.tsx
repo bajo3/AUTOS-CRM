@@ -1,18 +1,52 @@
-// components/meli/MeliItemRow.tsx
+// src/components/meli/MeliItemRow.tsx
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { MeliItem } from '../../../src/lib/meliApi';
+import type { MeliItem } from '../../lib/meliApi';
 
 type Props = {
   item: MeliItem;
   onChangePrice?: (id: string) => void;
   onClose?: (id: string) => void;
+  onRelist?: (id: string) => void;
+  onLinkVehicle?: (id: string) => void;
 };
 
-export default function MeliItemRow({ item, onChangePrice, onClose }: Props) {
-  const dateLabel = item.date_created
-    ? new Date(item.date_created).toLocaleDateString('es-AR')
-    : '-';
+export default function MeliItemRow({
+  item,
+  onChangePrice,
+  onClose,
+  onRelist,
+  onLinkVehicle,
+}: Props) {
+  // -------- FECHA --------
+  const rawDate =
+    item.start_time || (item as any).date_created || (item as any).stop_time;
+  let dateLabel = '-';
+  if (rawDate) {
+    const ts = new Date(rawDate);
+    if (!isNaN(ts.getTime())) {
+      dateLabel = ts.toLocaleDateString('es-AR');
+    }
+  }
+
+  // -------- PRECIO --------
+  const rawPrice: any = (item as any).price;
+  let priceLabel = '-';
+
+  if (typeof rawPrice === 'number') {
+    priceLabel = rawPrice.toLocaleString('es-AR');
+  } else if (typeof rawPrice === 'string' && rawPrice.trim() !== '') {
+    const n = Number(rawPrice);
+    if (!isNaN(n)) {
+      priceLabel = n.toLocaleString('es-AR');
+    }
+  } else {
+    console.warn('[MeliItemRow] Item sin price', {
+      id: item.id,
+      price: rawPrice,
+      title: item.title,
+    });
+  }
 
   return (
     <View style={styles.card}>
@@ -29,16 +63,14 @@ export default function MeliItemRow({ item, onChangePrice, onClose }: Props) {
             {item.title}
           </Text>
           <Text style={styles.id}>{item.id}</Text>
-          <Text style={styles.date}>Creado: {dateLabel}</Text>
+          <Text style={styles.date}>Publicada: {dateLabel}</Text>
         </View>
       </View>
 
       <View style={styles.footer}>
         <View style={styles.priceBlock}>
           <Text style={styles.priceLabel}>Precio</Text>
-          <Text style={styles.priceValue}>
-            ${item.price.toLocaleString('es-AR')}
-          </Text>
+          <Text style={styles.priceValue}>${priceLabel}</Text>
         </View>
 
         <View style={styles.actions}>
@@ -47,7 +79,25 @@ export default function MeliItemRow({ item, onChangePrice, onClose }: Props) {
               style={[styles.button, styles.buttonSecondary]}
               onPress={() => onChangePrice(item.id)}
             >
-              <Text style={styles.buttonTextSecondary}>Cambiar precio</Text>
+              <Text style={styles.buttonTextSecondary}>Precio</Text>
+            </TouchableOpacity>
+          )}
+
+          {onRelist && (
+            <TouchableOpacity
+              style={[styles.button, styles.buttonPrimary]}
+              onPress={() => onRelist(item.id)}
+            >
+              <Text style={styles.buttonText}>Republicar</Text>
+            </TouchableOpacity>
+          )}
+
+          {onLinkVehicle && (
+            <TouchableOpacity
+              style={[styles.button, styles.buttonSecondary]}
+              onPress={() => onLinkVehicle(item.id)}
+            >
+              <Text style={styles.buttonTextSecondary}>Vincular auto</Text>
             </TouchableOpacity>
           )}
 
@@ -127,12 +177,15 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   button: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
+    marginLeft: 6, // reemplaza "gap"
+    marginTop: 4,
   },
   buttonDanger: {
     backgroundColor: '#ef4444',
@@ -141,6 +194,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
     borderWidth: 1,
     borderColor: '#4b5563',
+  },
+  buttonPrimary: {
+    backgroundColor: '#3b82f6',
   },
   buttonText: {
     color: '#f9fafb',
