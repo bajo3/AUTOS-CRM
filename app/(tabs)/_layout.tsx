@@ -14,6 +14,9 @@ function getTabBarOptions(colorScheme: ColorSchemeName) {
       backgroundColor: dark ? '#020617' : '#ffffff',
       borderTopColor: dark ? '#111827' : '#e5e7eb',
     },
+    tabBarLabelStyle: {
+      fontSize: 11,
+    },
   } as const;
 }
 
@@ -22,18 +25,18 @@ export default function TabLayout() {
 
   return (
     <Tabs screenOptions={getTabBarOptions(colorScheme)}>
-      {/* Autos (CRM) */}
+      {/* CRM completo (clientes, búsquedas, vehículos) */}
       <Tabs.Screen
-        name="vehicles"
+        name="crm"
         options={{
-          title: 'Autos',
+          title: 'CRM',
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="directions-car-filled" size={size} color={color} />
+            <MaterialIcons name="people-alt" size={size} color={color} />
           ),
         }}
       />
 
-      {/* MercadoLibre */}
+      {/* MercadoLibre (el nombre correcto del route es "meli", no "meli/index") */}
       <Tabs.Screen
         name="meli"
         options={{

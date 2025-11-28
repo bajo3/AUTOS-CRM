@@ -109,7 +109,16 @@ export default function ClientsListScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Clientes</Text>
+      {/* Header con título + botón nuevo cliente */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Clientes</Text>
+
+        <Link href="/(tabs)/crm/clients/new" asChild>
+          <TouchableOpacity style={styles.addButton}>
+            <Text style={styles.addButtonText}>+ Cliente</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -144,12 +153,33 @@ export default function ClientsListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#050816' },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+
   title: {
     fontSize: 22,
     fontWeight: '700',
     color: '#f9fafb',
-    marginBottom: 12,
   },
+
+  addButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  addButtonText: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   error: {
     color: '#f97373',
     fontSize: 13,

@@ -17,6 +17,8 @@ import {
   unlinkVehicleFromMeli,
 } from '../../../../src/features/crm/api/vehicles';
 import { closeItem, updateItemPrice } from '../../../../src/lib/meliApi';
+import { useSearchRequests } from '../../../../src/features/crm/hooks/useSearchRequests';
+import { matchVehiclesToSearch } from '../../../../src/features/matching/matchLogic';
 
 export default function VehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,8 +29,15 @@ export default function VehicleDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  const { searches, loading: loadingSearches, error: searchesError } =
+    useSearchRequests();
+
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id) {
+      setError('Falta el ID del vehículo.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -55,7 +64,10 @@ export default function VehicleDetailScreen() {
 
   const handleOpenMeli = () => {
     if (!linked) {
-      Alert.alert('Sin ML', 'Este vehículo no está vinculado a ninguna publicación de ML.');
+      Alert.alert(
+        'Sin ML',
+        'Este vehículo no está vinculado a ninguna publicación de ML.'
+      );
       return;
     }
     const permalink = (vehicle as any)?.permalink as string | undefined;
@@ -73,7 +85,10 @@ export default function VehicleDetailScreen() {
 
   const handleSyncPriceToMeli = async () => {
     if (!linked) {
-      Alert.alert('Sin ML', 'Este vehículo no está vinculado a ninguna publicación de ML.');
+      Alert.alert(
+        'Sin ML',
+        'Este vehículo no está vinculado a ninguna publicación de ML.'
+      );
       return;
     }
     if (typeof vehicle?.price !== 'number' || vehicle.price <= 0) {
@@ -97,7 +112,10 @@ export default function VehicleDetailScreen() {
 
   const handleCloseMeli = async () => {
     if (!linked) {
-      Alert.alert('Sin ML', 'Este vehículo no está vinculado a ninguna publicación de ML.');
+      Alert.alert(
+        'Sin ML',
+        'Este vehículo no está vinculado a ninguna publicación de ML.'
+      );
       return;
     }
     Alert.alert(
@@ -115,7 +133,10 @@ export default function VehicleDetailScreen() {
               Alert.alert('Listo', 'Se cerró la publicación en MercadoLibre.');
             } catch (e: any) {
               console.error('Error cerrando publicación ML', e);
-              Alert.alert('Error', e?.message || 'Error cerrando publicación ML.');
+              Alert.alert(
+                'Error',
+                e?.message || 'Error cerrando publicación ML.'
+              );
             } finally {
               setActionLoading(false);
             }
@@ -146,7 +167,10 @@ export default function VehicleDetailScreen() {
               Alert.alert('Listo', 'Se desvinculó el vehículo de ML.');
             } catch (e: any) {
               console.error('Error desvinculando de ML', e);
-              Alert.alert('Error', e?.message || 'Error desvinculando de ML.');
+              Alert.alert(
+                'Error',
+                e?.message || 'Error desvinculando de ML.'
+              );
             } finally {
               setActionLoading(false);
             }
@@ -155,6 +179,25 @@ export default function VehicleDetailScreen() {
       ]
     );
   };
+
+  // --- Matches automáticos: este vehículo vs todas las búsquedas ---
+  const topMatches = React.useMemo(() => {
+    if (!vehicle || !searches || !searches.length) return [];
+
+    const results =
+      searches
+        .map((search: any) => {
+          const [match] = matchVehiclesToSearch([vehicle], search) || [];
+          if (!match) return null;
+          return {
+            search,
+            score: match.score,
+          };
+        })
+        .filter(Boolean) as { search: any; score: number }[];
+
+    return results.sort((a, b) => b.score - a.score).slice(0, 5);
+  }, [vehicle, searches]);
 
   if (loading) {
     return (
@@ -169,7 +212,10 @@ export default function VehicleDetailScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.error}>{error || 'Vehículo no encontrado'}</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
       </View>
@@ -177,7 +223,10 @@ export default function VehicleDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: 32 }}
+    >
       <Text style={styles.title}>
         {vehicle.title || vehicle.slug || 'Vehículo'}
       </Text>
@@ -213,7 +262,9 @@ export default function VehicleDetailScreen() {
 
       {!linked && (
         <View style={styles.alertBox}>
-          <Text style={styles.alertTitle}>Este vehículo no está vinculado a ML</Text>
+          <Text style={styles.alertTitle}>
+            Este vehículo no está vinculado a ML
+          </Text>
           <Text style={styles.alertText}>
             Podés vincularlo desde la pestaña de MercadoLibre, usando el botón
             &quot;Vincular auto&quot; en la publicación correspondiente.
@@ -257,7 +308,9 @@ export default function VehicleDetailScreen() {
           onPress={handleSyncPriceToMeli}
           disabled={!linked || actionLoading}
         >
-          <Text style={styles.actionButtonText}>Actualizar precio en ML</Text>
+          <Text style={styles.actionButtonText}>
+            Actualizar precio en ML
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -265,7 +318,9 @@ export default function VehicleDetailScreen() {
           onPress={handleCloseMeli}
           disabled={!linked || actionLoading}
         >
-          <Text style={styles.actionButtonText}>Cerrar publicación en ML</Text>
+          <Text style={styles.actionButtonText}>
+            Cerrar publicación en ML
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -279,6 +334,34 @@ export default function VehicleDetailScreen() {
         >
           <Text style={styles.actionButtonText}>Desvincular de ML</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Matches automáticos: búsquedas/clientes que quieren algo similar */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          Clientes que buscan algo similar
+        </Text>
+
+        {loadingSearches ? (
+          <Text style={styles.loadingText}>Calculando coincidencias…</Text>
+        ) : searchesError ? (
+          <Text style={styles.error}>
+            Error cargando búsquedas: {searchesError}
+          </Text>
+        ) : !topMatches.length ? (
+          <Text style={styles.alertText}>
+            No hay búsquedas que coincidan con este vehículo.
+          </Text>
+        ) : (
+          topMatches.map(({ search, score }) => (
+            <View key={search.id} style={styles.infoRow}>
+              <Text style={styles.infoLabel}>
+                {search.title || 'Búsqueda sin título'}
+              </Text>
+              <Text style={styles.infoValue}>Puntaje {score}</Text>
+            </View>
+          ))
+        )}
       </View>
 
       {actionLoading && (
@@ -316,7 +399,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   loadingText: { marginTop: 8, color: '#9ca3af' },
-  error: { color: '#f97373', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  error: {
+    color: '#f97373',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   backButton: {
     marginTop: 8,
     paddingHorizontal: 16,

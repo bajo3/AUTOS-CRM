@@ -8,7 +8,7 @@ export default function CrmHomeScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>CRM de Autos</Text>
       <Text style={styles.subtitle}>
-        Gestioná clientes, búsquedas y vehículos. (Placeholder)
+        Gestioná clientes, búsquedas y vehículos.
       </Text>
 
       <View style={styles.links}>

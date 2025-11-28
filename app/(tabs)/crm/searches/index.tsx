@@ -22,6 +22,7 @@ export default function SearchesScreen() {
     // Calcular coincidencias para esta búsqueda utilizando los vehículos actuales
     const matches = matchVehiclesToSearch(vehicles || [], item);
     const top = matches.slice(0, 3);
+
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{item.title || '(Sin título)'}</Text>
@@ -30,23 +31,31 @@ export default function SearchesScreen() {
           {item.brand || 'Cualquier marca'} ·
           {item.year_min ? ` desde ${item.year_min}` : ''}
           {item.year_max ? ` hasta ${item.year_max}` : ''}
-          {typeof item.price_min === 'number' && ` · $${item.price_min.toLocaleString('es-AR')}`}
-          {typeof item.price_max === 'number' && ` – $${item.price_max.toLocaleString('es-AR')}`}
+          {typeof item.price_min === 'number' &&
+            ` · $${item.price_min.toLocaleString('es-AR')}`}
+          {typeof item.price_max === 'number' &&
+            ` – $${item.price_max.toLocaleString('es-AR')}`}
         </Text>
+
         {matches.length > 0 ? (
           <View style={styles.matchesSection}>
             <Text style={styles.matchesTitle}>Coincidencias sugeridas:</Text>
             {top.map((m) => (
               <Text key={m.vehicle.id} style={styles.matchRow}>
-                • {m.vehicle.title || m.vehicle.slug || m.vehicle.id} (puntaje {m.score})
+                • {m.vehicle.title || m.vehicle.slug || m.vehicle.id} (puntaje{' '}
+                {m.score})
               </Text>
             ))}
             {matches.length > top.length && (
-              <Text style={styles.matchRow}>…y {matches.length - top.length} más</Text>
+              <Text style={styles.matchRow}>
+                …y {matches.length - top.length} más
+              </Text>
             )}
           </View>
         ) : (
-          <Text style={styles.noMatches}>No hay coincidencias con el stock</Text>
+          <Text style={styles.noMatches}>
+            No hay coincidencias con el stock
+          </Text>
         )}
       </View>
     );

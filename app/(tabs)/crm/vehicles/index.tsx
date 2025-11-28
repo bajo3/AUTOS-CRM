@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useVehicles } from '../../../../src/features/crm/hooks/useVehicles';
 import type { Vehicle } from '../../../../src/features/crm/types';
 
@@ -18,14 +18,24 @@ export default function VehiclesScreen() {
 
   const handleOpenDetail = (vehicle: Vehicle) => {
     router.push({
-      pathname: '/(tabs)/vehicles/[id]',
+      pathname: '/(tabs)/crm/vehicles/[id]',
       params: { id: vehicle.id },
     });
   };
 
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Autos en stock</Text>
+      {/* Header con título + botón nuevo auto */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Autos en stock</Text>
+
+        <Link href="/(tabs)/crm/vehicles/new" asChild>
+          <TouchableOpacity style={styles.addButton}>
+            <Text style={styles.addButtonText}>+ Auto</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -99,12 +109,33 @@ function VehicleRow({ vehicle, onPress }: RowProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#050816' },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+
   title: {
     fontSize: 22,
     fontWeight: '700',
     color: '#f9fafb',
-    marginBottom: 12,
   },
+
+  addButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  addButtonText: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   error: {
     color: '#f97373',
     fontSize: 13,
