@@ -1,185 +1,160 @@
 // app/(tabs)/crm/clients/index.tsx
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { Link } from 'expo-router';
-import {
-  fetchClients,
-  type Client,
-} from '../../../../src/features/crm/api/clients';
+import { Link, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 
-function formatInitials(name?: string | null): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (!parts.length) return '?';
-  const first = parts[0]?.[0] ?? '';
-  const second = parts[1]?.[0] ?? '';
-  return (first + second).toUpperCase();
-}
+import { useClients } from '../../../../src/features/crm/hooks/useClients';
+import type { Client } from '../../../../src/features/crm/api/clients';
+import { useClientHasMatches } from '../../../../src/features/crm/hooks/useClientHasMatches';
 
-function formatName(client: Client): string {
-  return client.full_name || '(Sin nombre)';
-}
+export default function ClientsScreen() {
+  const { clients, loading, error, reload } = useClients();
+  const router = useRouter();
 
-function formatSubtitle(client: Client): string {
-  const phone = client.phone || null;
-  const email = client.email || null;
-  const parts = [phone, email].filter(Boolean);
-  return parts.join(' • ');
-}
-
-export default function ClientsListScreen() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchClients();
-      setClients(data);
-    } catch (e: any) {
-      console.error('Error cargando clientes', e);
-      setError(e?.message || 'Error cargando clientes');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const reload = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const data = await fetchClients();
-      setClients(data);
-    } catch (e: any) {
-      console.error('Error recargando clientes', e);
-      setError(e?.message || 'Error recargando clientes');
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const renderItem = ({ item }: { item: Client }) => {
-    const name = formatName(item);
-    const subtitle = formatSubtitle(item);
-    const initials = formatInitials(item.full_name);
-
-    return (
-      <Link
-        href={{ pathname: '/(tabs)/crm/clients/[id]', params: { id: item.id } }}
-        asChild
-      >
-        <TouchableOpacity style={styles.card}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
-          <View style={styles.cardContent}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {name}
-            </Text>
-            {subtitle ? (
-              <Text style={styles.cardSubtitle} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-            {item.notes ? (
-              <Text style={styles.cardNotes} numberOfLines={1}>
-                {item.notes}
-              </Text>
-            ) : null}
-          </View>
-        </TouchableOpacity>
-      </Link>
-    );
+  const handleOpenDetail = (client: Client) => {
+    router.push({
+      pathname: '/(tabs)/crm/clients/[id]',
+      params: { id: client.id },
+    });
   };
 
   return (
     <View style={styles.container}>
-      {/* Header con título + botón nuevo cliente */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Clientes</Text>
-
-        <Link href="/(tabs)/crm/clients/new" asChild>
-          <TouchableOpacity style={styles.addButton}>
-            <Text style={styles.addButtonText}>+ Cliente</Text>
-          </TouchableOpacity>
-        </Link>
-      </View>
+      {/* Header simple */}
+      <Text style={styles.title}>Clientes</Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading && !clients.length ? (
         <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color="#60a5fa" />
+          <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>Cargando clientes...</Text>
         </View>
       ) : (
         <FlatList
           data={clients}
           keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={
-            clients.length ? styles.listContent : styles.listEmptyContent
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={reload} />
-          }
+          contentContainerStyle={styles.listContent}
+          refreshing={loading}
+          onRefresh={reload}
+          renderItem={({ item }) => (
+            <ClientRow client={item} onPress={handleOpenDetail} />
+          )}
           ListEmptyComponent={
             !loading ? (
-              <Text style={styles.emptyText}>
-                No hay clientes cargados en la tabla "clients".
-              </Text>
+              <Text style={styles.empty}>No hay clientes cargados.</Text>
             ) : null
           }
         />
       )}
+
+      {/* FAB: Botón flotante + Cliente abajo a la derecha */}
+      <View style={styles.fabContainer}>
+        <Link href="/(tabs)/crm/clients/new" asChild>
+          <TouchableOpacity style={styles.fab}>
+            <Text style={styles.fabText}>+ Cliente</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
     </View>
+  );
+}
+
+type RowProps = {
+  client: Client;
+  onPress: (client: Client) => void;
+};
+
+function ClientRow({ client, onPress }: RowProps) {
+  const initials = (client.full_name || '?')
+    .split(/\s+/)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2);
+
+  // ¿Tiene matches este cliente?
+  const { hasMatches } = useClientHasMatches(client.id);
+
+  const handleWhatsApp = () => {
+    if (!client.phone) return;
+
+    const digits = client.phone.replace(/\D/g, '');
+    if (!digits) return;
+
+    const url = `https://wa.me/${digits}`;
+    Linking.openURL(url).catch((err) => {
+      console.error('Error abriendo WhatsApp desde lista', err);
+    });
+  };
+
+  const cardStyle = [
+    styles.card,
+    hasMatches && styles.cardHasMatch, // 👈 borde verde si tiene match
+  ];
+
+  return (
+    <TouchableOpacity
+      style={cardStyle}
+      onPress={() => onPress(client)}
+      activeOpacity={0.8}
+    >
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initials || '?'}</Text>
+      </View>
+
+      <View style={styles.info}>
+        <Text style={styles.name} numberOfLines={1}>
+          {client.full_name || '(Sin nombre)'}
+        </Text>
+
+        {client.phone ? (
+          <Text style={styles.meta} numberOfLines={1}>
+            📞 {client.phone}
+          </Text>
+        ) : null}
+
+        {client.email ? (
+          <Text style={styles.meta} numberOfLines={1}>
+            ✉️ {client.email}
+          </Text>
+        ) : null}
+
+        {/* Badge de matches disponibles */}
+        {hasMatches && (
+          <Text style={styles.matchBadge}>⚡ Matches disponibles</Text>
+        )}
+      </View>
+
+      {/* Ícono de WhatsApp a la derecha si tiene teléfono */}
+      {client.phone ? (
+        <TouchableOpacity
+          style={styles.whatsappButton}
+          onPress={handleWhatsApp}
+        >
+          <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
+        </TouchableOpacity>
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#050816' },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-
   title: {
     fontSize: 22,
     fontWeight: '700',
     color: '#f9fafb',
+    marginBottom: 12,
   },
-
-  addButton: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-
-  addButtonText: {
-    color: '#f9fafb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
   error: {
     color: '#f97373',
     fontSize: 13,
@@ -190,26 +165,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadingText: { marginTop: 8, color: '#9ca3af' },
+  loadingText: {
+    marginTop: 8,
+    color: '#9ca3af',
+  },
   listContent: {
-    paddingBottom: 16,
+    paddingBottom: 80, // para que no tape el FAB
   },
-  listEmptyContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  emptyText: {
+  empty: {
+    marginTop: 32,
     textAlign: 'center',
     color: '#9ca3af',
-    fontSize: 14,
   },
   card: {
     flexDirection: 'row',
     backgroundColor: '#111827',
     borderRadius: 12,
     padding: 10,
-    marginBottom: 10,
+    marginBottom: 8,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  cardHasMatch: {
+    borderColor: '#22c55e', // borde verde cuando tiene match
   },
   avatar: {
     width: 40,
@@ -222,25 +201,53 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: '#e5e7eb',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
-  cardContent: {
+  info: {
     flex: 1,
   },
-  cardTitle: {
-    color: '#e5e7eb',
+  name: {
+    color: '#f9fafb',
     fontSize: 15,
     fontWeight: '600',
   },
-  cardSubtitle: {
+  meta: {
     color: '#9ca3af',
     fontSize: 12,
     marginTop: 2,
   },
-  cardNotes: {
-    color: '#6b7280',
+  matchBadge: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: '#22c55e22',
+    color: '#bbf7d0',
     fontSize: 11,
-    marginTop: 2,
+    fontWeight: '600',
+  },
+  whatsappButton: {
+    padding: 6,
+    marginLeft: 8,
+    alignSelf: 'center',
+  },
+  fabContainer: {
+    position: 'absolute',
+    right: 16,
+    bottom: 24,
+  },
+  fab: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    elevation: 4,
+  },
+  fabText: {
+    color: '#f9fafb',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

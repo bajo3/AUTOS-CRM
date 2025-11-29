@@ -1,66 +1,64 @@
 // app/(tabs)/crm/clients/[id].tsx
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  TextInput,
   TouchableOpacity,
+  Alert,
+  Linking,
 } from 'react-native';
-import { useLocalSearchParams, Link } from 'expo-router';
+import { useLocalSearchParams, useRouter, Link } from 'expo-router';
+import type { Client } from '../../../../src/features/crm/api/clients';
 import {
   fetchClientById,
-  fetchClientSearches,
-  fetchClientMatches,
-  type Client,
-  type ClientSearchRequest,
-  type ClientMatch,
+  updateClient,
+  deleteClient,
 } from '../../../../src/features/crm/api/clients';
-import { formatPrice } from '../../../../src/features/crm/utils/formatPrice';
-
-function formatInitials(name?: string | null): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (!parts.length) return '?';
-  const first = parts[0]?.[0] ?? '';
-  const second = parts[1]?.[0] ?? '';
-  return (first + second).toUpperCase();
-}
 
 export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
 
   const [client, setClient] = useState<Client | null>(null);
-  const [searches, setSearches] = useState<ClientSearchRequest[]>([]);
-  const [matches, setMatches] = useState<ClientMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [notes, setNotes] = useState('');
+
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id) {
+      setError('Falta el ID del cliente.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const [clientData, searchData, matchData] = await Promise.all([
-        fetchClientById(id),
-        fetchClientSearches(id),
-        fetchClientMatches(id),
-      ]);
-
-      if (!clientData) {
-        setError('No se encontró el cliente.');
+      const data = await fetchClientById(String(id));
+      if (!data) {
+        setError('Cliente no encontrado');
         setClient(null);
-        setSearches([]);
-        setMatches([]);
       } else {
-        setClient(clientData);
-        setSearches(searchData);
-        setMatches(matchData);
+        setClient(data);
+        setFullName(data.full_name || '');
+        setPhone(data.phone || '');
+        setEmail(data.email || '');
+        setNotes(data.notes || '');
       }
     } catch (e: any) {
-      console.error('Error cargando detalle de cliente', e);
+      console.error('Error cargando cliente', e);
       setError(e?.message || 'Error cargando cliente');
+      setClient(null);
     } finally {
       setLoading(false);
     }
@@ -70,9 +68,90 @@ export default function ClientDetailScreen() {
     load();
   }, [load]);
 
+  const handleSave = async () => {
+    if (!client || !id) return;
+    if (!fullName.trim()) {
+      Alert.alert('Atención', 'El nombre es obligatorio.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updated = await updateClient(String(id), {
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        notes: notes.trim() || null,
+      });
+      setClient(updated);
+      setIsEditing(false);
+    } catch (e: any) {
+      console.error('Error actualizando cliente', e);
+      Alert.alert('Error', e?.message || 'Error actualizando cliente');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!id) return;
+    Alert.alert(
+      'Eliminar cliente',
+      '¿Seguro que querés eliminar este cliente? Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              await deleteClient(String(id));
+              router.back();
+            } catch (e: any) {
+              console.error('Error eliminando cliente', e);
+              Alert.alert('Error', e?.message || 'Error eliminando cliente');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleWhatsApp = () => {
+    if (!client?.phone) {
+      Alert.alert(
+        'Sin teléfono',
+        'Este cliente no tiene un teléfono cargado para WhatsApp.'
+      );
+      return;
+    }
+
+    const digits = client.phone.replace(/\D/g, '');
+    if (!digits) {
+      Alert.alert(
+        'Teléfono inválido',
+        'El teléfono del cliente no parece válido para WhatsApp.'
+      );
+      return;
+    }
+
+    const url = `https://wa.me/${digits}`;
+
+    Linking.openURL(url).catch((err) => {
+      console.error('Error abriendo WhatsApp', err);
+      Alert.alert(
+        'Error',
+        'No se pudo abrir WhatsApp. Verificá que esté instalado.'
+      );
+    });
+  };
+
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color="#60a5fa" />
         <Text style={styles.loadingText}>Cargando cliente...</Text>
       </View>
@@ -81,169 +160,166 @@ export default function ClientDetailScreen() {
 
   if (error || !client) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error || 'Cliente no encontrado.'}</Text>
+      <View style={styles.centered}>
+        <Text style={styles.error}>{error || 'Cliente no encontrado'}</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Text style={styles.backButtonText}>Volver</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const initials = formatInitials(client.full_name);
-  const name = client.full_name || '(Sin nombre)';
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: 32 }}
+    >
+      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
-        <View style={styles.headerText}>
-          <Text style={styles.name}>{name}</Text>
-          {client.phone ? (
-            <Text style={styles.meta}>{client.phone}</Text>
-          ) : null}
-          {client.email ? (
-            <Text style={styles.meta}>{client.email}</Text>
-          ) : null}
-        </View>
+        <Text style={styles.title}>{client.full_name || '(Sin nombre)'}</Text>
+        {client.phone ? (
+          <Text style={styles.subtitle}>{client.phone}</Text>
+        ) : null}
       </View>
 
-      {client.notes ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notas</Text>
-          <Text style={styles.notes}>{client.notes}</Text>
-        </View>
-      ) : null}
+      {/* Botones principales debajo del header */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.whatsappButton]}
+          onPress={handleWhatsApp}
+          disabled={!client.phone}
+        >
+          <Text style={styles.actionText}>WhatsApp</Text>
+        </TouchableOpacity>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>
-            Búsquedas ({searches.length})
+        <TouchableOpacity
+          style={[styles.actionButton, styles.editButton]}
+          onPress={() => setIsEditing((prev) => !prev)}
+          disabled={saving}
+        >
+          <Text style={styles.actionText}>
+            {isEditing ? 'Cancelar' : 'Editar'}
           </Text>
+        </TouchableOpacity>
 
-          {id ? (
-            <Link
-              href={{
-                pathname: '/(tabs)/crm/clients/[id]/new-search',
-                params: { id: String(id) },
-              }}
-              asChild
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteButton]}
+          onPress={handleDelete}
+          disabled={saving}
+        >
+          <Text style={styles.actionText}>Eliminar</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Link a nueva búsqueda */}
+      <View style={styles.section}>
+        <Link
+          href={{
+            pathname: '/(tabs)/crm/clients/[id]/new-search',
+            params: { id: client.id },
+          }}
+          asChild
+        >
+          <TouchableOpacity style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>+ Nueva búsqueda</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
+
+      {/* Datos del cliente */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Datos del cliente</Text>
+
+        {isEditing ? (
+          <>
+            <Label>Nombre completo</Label>
+            <TextInput
+              style={styles.input}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Nombre"
+              placeholderTextColor="#6b7280"
+            />
+
+            <Label>Teléfono (formato para WhatsApp)</Label>
+            <TextInput
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Ej: 5492494123456"
+              placeholderTextColor="#6b7280"
+              keyboardType="phone-pad"
+            />
+
+            <Label>Email</Label>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email"
+              placeholderTextColor="#6b7280"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <Label>Notas</Label>
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Notas internas"
+              placeholderTextColor="#6b7280"
+              multiline
+              numberOfLines={3}
+            />
+
+            <TouchableOpacity
+              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              disabled={saving}
             >
-              <TouchableOpacity style={styles.chipButton}>
-                <Text style={styles.chipButtonText}>Nueva búsqueda</Text>
-              </TouchableOpacity>
-            </Link>
-          ) : null}
-        </View>
-
-        {searches.length === 0 ? (
-          <Text style={styles.empty}>Este cliente no tiene búsquedas aún.</Text>
+              {saving ? (
+                <ActivityIndicator size="small" color="#f9fafb" />
+              ) : (
+                <Text style={styles.saveButtonText}>Guardar cambios</Text>
+              )}
+            </TouchableOpacity>
+          </>
         ) : (
-          searches.map((s) => (
-            <View key={s.id} style={styles.searchCard}>
-              <Text style={styles.searchTitle}>
-                {s.title || 'Búsqueda sin título'}
-              </Text>
-              {s.description ? (
-                <Text style={styles.searchDesc}>{s.description}</Text>
-              ) : null}
-              <View style={styles.searchMetaRow}>
-                {s.brand ? (
-                  <Text style={styles.searchMeta}>Marca: {s.brand}</Text>
-                ) : null}
-                {s.year_min || s.year_max ? (
-                  <Text style={styles.searchMeta}>
-                    Año: {s.year_min || '?'} - {s.year_max || '?'}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={styles.searchMetaRow}>
-                {s.price_min || s.price_max ? (
-                  <Text style={styles.searchMeta}>
-                    Presupuesto:{' '}
-                    {formatPrice(s.price_min)} - {formatPrice(s.price_max)}
-                  </Text>
-                ) : null}
-                {s.created_at ? (
-                  <Text style={styles.searchMeta}>
-                    {new Date(s.created_at).toLocaleDateString('es-AR')}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-          ))
+          <>
+            <InfoRow label="Nombre" value={client.full_name} />
+            <InfoRow label="Teléfono" value={client.phone} />
+            <InfoRow label="Email" value={client.email} />
+            <InfoRow label="Notas" value={client.notes} />
+          </>
         )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          Matches ({matches.length})
-        </Text>
-        {matches.length === 0 ? (
-          <Text style={styles.empty}>
-            Todavía no hay matches con vehículos para este cliente.
-          </Text>
-        ) : (
-          matches.map((m) => {
-            const v = m.vehicle;
-            const title = v
-              ? [v.brand, v.title, v.year].filter(Boolean).join(' ')
-              : `Vehículo ${m.vehicle_id}`;
-            const price = v ? formatPrice(v.price) : '-';
-
-            return (
-              <Link
-                key={m.id}
-                href={{
-                  pathname: '/(tabs)/crm/vehicles/[id]',
-                  params: { id: m.vehicle_id },
-                }}
-                asChild
-              >
-                <View style={styles.matchCard}>
-                  <View style={styles.matchHeader}>
-                    <Text style={styles.matchTitle} numberOfLines={2}>
-                      {title}
-                    </Text>
-                    <Text style={styles.matchPrice}>{price}</Text>
-                  </View>
-                  <View style={styles.matchMetaRow}>
-                    {m.match_type ? (
-                      <Text style={styles.matchMeta}>
-                        Tipo: {m.match_type}
-                      </Text>
-                    ) : null}
-                    {m.created_at ? (
-                      <Text style={styles.matchMeta}>
-                        {new Date(m.created_at).toLocaleString('es-AR')}
-                      </Text>
-                    ) : null}
-                  </View>
-                  {m.notes ? (
-                    <Text style={styles.matchNotes} numberOfLines={2}>
-                      {m.notes}
-                    </Text>
-                  ) : null}
-                </View>
-              </Link>
-            );
-          })
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Acciones (futuro)</Text>
-        <Text style={styles.empty}>
-          Acá después podemos agregar botones para:
-        </Text>
-        <Text style={styles.empty}>• Crear match con vehículo</Text>
-        <Text style={styles.empty}>• Abrir WhatsApp directamente</Text>
       </View>
     </ScrollView>
   );
 }
 
+function Label({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.label}>{children}</Text>;
+}
+
+type InfoRowProps = {
+  label: string;
+  value?: string | null;
+};
+
+function InfoRow({ label, value }: InfoRowProps) {
+  if (!value) return null;
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  center: {
+  container: { flex: 1, padding: 16, backgroundColor: '#050816' },
+  centered: {
     flex: 1,
     backgroundColor: '#050816',
     alignItems: 'center',
@@ -251,137 +327,136 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   loadingText: { marginTop: 8, color: '#9ca3af' },
-  error: { color: '#f97373', fontSize: 14, textAlign: 'center' },
-  container: { flex: 1, backgroundColor: '#050816' },
-  content: { padding: 16, paddingBottom: 32 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+  error: {
+    color: '#f97373',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  avatar: {
-    width: 52,
-    height: 52,
+  backButton: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#1f2937',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    backgroundColor: '#1d4ed8',
   },
-  avatarText: {
-    color: '#e5e7eb',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  headerText: {
-    flex: 1,
-  },
-  name: {
+  backButtonText: {
     color: '#f9fafb',
-    fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '600',
   },
-  meta: {
-    color: '#9ca3af',
+  header: {
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#f9fafb',
+  },
+  subtitle: {
     fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
+  },
+  // fila de botones
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    backgroundColor: '#0f172a',
+    padding: 10,
+    borderRadius: 12,
+  },
+  actionButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  actionText: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  whatsappButton: {
+    backgroundColor: '#22c55e',
+  },
+  editButton: {
+    backgroundColor: '#334155',
+  },
+  deleteButton: {
+    backgroundColor: '#b91c1c',
   },
   section: {
-    marginTop: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#111827',
+    marginTop: 20,
   },
   sectionTitle: {
     color: '#e5e7eb',
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  label: {
+    color: '#d1d5db',
+    fontSize: 12,
     marginBottom: 4,
-    gap: 8,
+    marginTop: 6,
   },
-  chipButton: {
+  input: {
+    backgroundColor: '#111827',
+    borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    color: '#f9fafb',
+    fontSize: 13,
+  },
+  inputMultiline: {
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    marginTop: 12,
+    backgroundColor: '#60a5fa',
     borderRadius: 999,
-    backgroundColor: '#1f2937',
+    paddingVertical: 10,
+    alignItems: 'center',
   },
-  chipButtonText: {
-    color: '#e5e7eb',
-    fontSize: 12,
-    fontWeight: '600',
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
-  notes: {
-    color: '#d1d5db',
-    fontSize: 13,
-  },
-  empty: {
-    color: '#9ca3af',
-    fontSize: 13,
-  },
-  searchCard: {
-    backgroundColor: '#111827',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  searchTitle: {
-    color: '#e5e7eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  searchDesc: {
-    color: '#d1d5db',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  searchMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  searchMeta: {
-    color: '#9ca3af',
-    fontSize: 11,
-  },
-  matchCard: {
-    backgroundColor: '#111827',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  matchHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  matchTitle: {
-    flex: 1,
-    color: '#e5e7eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  matchPrice: {
-    color: '#60a5fa',
+  saveButtonText: {
+    color: '#f9fafb',
     fontSize: 14,
     fontWeight: '700',
   },
-  matchMetaRow: {
+  infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 4,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111827',
   },
-  matchMeta: {
+  infoLabel: {
     color: '#9ca3af',
-    fontSize: 11,
+    fontSize: 13,
   },
-  matchNotes: {
-    color: '#d1d5db',
-    fontSize: 12,
-    marginTop: 4,
+  infoValue: {
+    color: '#e5e7eb',
+    fontSize: 13,
+    marginLeft: 8,
+    flex: 1,
+    textAlign: 'right',
+  },
+  secondaryButton: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#1f2937',
+    alignSelf: 'flex-start',
+  },
+  secondaryButtonText: {
+    color: '#e5e7eb',
+    fontWeight: '600',
+    fontSize: 13,
   },
 });
