@@ -1,4 +1,4 @@
-/// src/features/matching/matchLogic.ts
+// src/features/matching/matchLogic.ts
 
 import type { Vehicle } from '../crm/types';
 
@@ -15,149 +15,285 @@ export type MatchResult = {
 };
 
 /**
- * Calcula el score de un vehículo contra una búsqueda.
- * La búsqueda puede venir de la tabla "search_requests" o similar.
- * No tipamos fuerte "search" a propósito para no pelear con tu tipo actual.
+ * Normalización básica: minúsculas + sin acentos
  */
-function scoreVehicleAgainstSearch(vehicle: Vehicle, search: any): MatchResult {
-  let score = 0;
-  const reasons: string[] = [];
-
-  const brandSearch = (search?.brand || '').toString().trim().toLowerCase();
-  const brandVehicle = (vehicle as any).brand
-    ? (vehicle as any).brand.toString().trim().toLowerCase()
-    : '';
-
-  const year = (vehicle as any).year as number | undefined;
-  const price = (vehicle as any).price as number | undefined;
-
-  const yearMin = (search?.year_min ?? undefined) as number | undefined;
-  const yearMax = (search?.year_max ?? undefined) as number | undefined;
-  const priceMin = (search?.price_min ?? undefined) as number | undefined;
-  const priceMax = (search?.price_max ?? undefined) as number | undefined;
-
-  // ---- Marca (hasta 40 puntos) ----
-  if (brandSearch) {
-    if (brandVehicle && brandVehicle === brandSearch) {
-      score += 40;
-      reasons.push(`Marca exacta: ${brandSearch}`);
-    } else if (brandVehicle && brandVehicle.includes(brandSearch)) {
-      score += 25;
-      reasons.push(`Marca compatible: ${brandSearch}`);
-    } else {
-      // Marca distinta → penalizamos un poco
-      score -= 10;
-      reasons.push('Marca distinta a lo buscado');
-    }
-  }
-
-  // ---- Año (hasta 30 puntos) ----
-  if (typeof year === 'number') {
-    if (typeof yearMin === 'number' && typeof yearMax === 'number') {
-      if (year >= yearMin && year <= yearMax) {
-        score += 30;
-        reasons.push(`Año dentro del rango ${yearMin}-${yearMax}`);
-      } else if (
-        (year >= yearMin - 1 && year < yearMin) ||
-        (year > yearMax && year <= yearMax + 1)
-      ) {
-        score += 15;
-        reasons.push('Año cercano al rango pedido');
-      } else {
-        score -= 5;
-        reasons.push('Año lejos de lo pedido');
-      }
-    } else if (typeof yearMin === 'number') {
-      if (year >= yearMin) {
-        score += 20;
-        reasons.push(`Año desde ${yearMin} cumplido`);
-      } else {
-        score -= 5;
-        reasons.push(`Año menor a ${yearMin}`);
-      }
-    } else if (typeof yearMax === 'number') {
-      if (year <= yearMax) {
-        score += 20;
-        reasons.push(`Año hasta ${yearMax} cumplido`);
-      } else {
-        score -= 5;
-        reasons.push(`Año mayor a ${yearMax}`);
-      }
-    }
-  }
-
-  // ---- Precio (hasta 30 puntos) ----
-  if (typeof price === 'number') {
-    if (typeof priceMin === 'number' && typeof priceMax === 'number') {
-      if (price >= priceMin && price <= priceMax) {
-        score += 30;
-        reasons.push(
-          `Precio dentro del rango $${priceMin.toLocaleString('es-AR')}–$${priceMax.toLocaleString('es-AR')}`
-        );
-      } else {
-        // Penalizar según qué tan lejos está
-        const center = (priceMin + priceMax) / 2;
-        const diffPercent = Math.abs(price - center) / center;
-        if (diffPercent < 0.1) {
-          score += 20;
-          reasons.push('Precio muy cercano al rango buscado');
-        } else if (diffPercent < 0.25) {
-          score += 10;
-          reasons.push('Precio relativamente cercano al rango');
-        } else {
-          score -= 5;
-          reasons.push('Precio lejos del rango de la búsqueda');
-        }
-      }
-    } else if (typeof priceMin === 'number') {
-      if (price >= priceMin) {
-        score += 20;
-        reasons.push(`Precio por encima de $${priceMin.toLocaleString('es-AR')}`);
-      } else {
-        score -= 5;
-        reasons.push(`Precio por debajo de $${priceMin.toLocaleString('es-AR')}`);
-      }
-    } else if (typeof priceMax === 'number') {
-      if (price <= priceMax) {
-        score += 20;
-        reasons.push(`Precio por debajo de $${priceMax.toLocaleString('es-AR')}`);
-      } else {
-        score -= 5;
-        reasons.push(`Precio por encima de $${priceMax.toLocaleString('es-AR')}`);
-      }
-    }
-  }
-
-  // ---- Bonus si no hay filtros muy fuertes pero el auto es relativamente nuevo ----
-  if (!brandSearch && !yearMin && !yearMax && !priceMin && !priceMax) {
-    if (typeof year === 'number' && year >= 2018) {
-      score += 15;
-      reasons.push('Auto moderno (2018+), sin filtros estrictos');
-    }
-  }
-
-  // Normalizar: mínimo 0
-  if (score < 0) score = 0;
-  if (score > 100) score = 100;
-
-  return { vehicle, score, reasons };
+function normalizeBasic(value?: string | null): string {
+  return (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, ''); // quita acentos
 }
 
 /**
- * Dado un listado de vehículos y una búsqueda,
- * devuelve la lista de vehículos ordenada por mejor score.
+ * Normalización "fuerte": sin espacios, guiones, barras, guiones bajos, etc.
+ * Ej:
+ *  - "T-Cross"  -> "tcross"
+ *  - "t cross"  -> "tcross"
+ *  - "T CROSS"  -> "tcross"
+ */
+function normalizeLoose(value?: string | null): string {
+  return normalizeBasic(value).replace(/[\s\-\_\/]+/g, '');
+}
+
+/**
+ * Normaliza marca (ignora espacios y guiones)
+ */
+function normalizeBrand(value?: string | null): string {
+  return normalizeLoose(value);
+}
+
+/**
+ * Intenta inferir palabras clave de modelo a partir del título / descripción de la búsqueda.
+ * Ej: "SUV tipo Fox Yaris C3" => ["suv", "fox", "yaris", "c3"]
+ */
+function extractSearchKeywords(search: any): string[] {
+  const base = [search?.title, search?.description].filter(Boolean).join(' ');
+
+  const cleaned = normalizeBasic(base);
+  if (!cleaned) return [];
+
+  const stopWords = new Set([
+    'busca',
+    'buscar',
+    'cliente',
+    'para',
+    'tipo',
+    'como',
+    'un',
+    'una',
+    'auto',
+    'autos',
+    'chico',
+    'chica',
+    'grande',
+  ]);
+
+  const rawWords = cleaned.split(/\s+/);
+
+  const unique = new Set<string>();
+
+  for (const w of rawWords) {
+    const trimmed = w.trim();
+    if (!trimmed) continue;
+    if (trimmed.length < 2) continue;
+    if (stopWords.has(trimmed)) continue;
+
+    unique.add(trimmed);
+  }
+
+  return Array.from(unique);
+}
+
+/**
+ * Calcula el score de un vehículo contra una búsqueda.
+ * Ponderación aproximada:
+ * - Marca: hasta 30
+ * - Modelo / texto: hasta 35
+ * - Año: hasta 25
+ * - Precio: hasta 20
+ */
+export function scoreVehicleAgainstSearch(
+  vehicle: Vehicle,
+  search: any
+): MatchResult {
+  let score = 0;
+  const reasons: string[] = [];
+
+  const vBrand = normalizeBrand(vehicle.brand);
+  const vTitle = normalizeBasic(vehicle.title);
+  const vModel = normalizeBasic(vehicle.model || '');
+  const vYear = vehicle.year ?? null;
+  const vPrice = vehicle.price ?? null;
+
+  const sBrand = normalizeBrand(search?.brand || null);
+  const sYearMin = (search?.year_min ?? null) as number | null;
+  const sYearMax = (search?.year_max ?? null) as number | null;
+  const sPriceMin = (search?.price_min ?? null) as number | null;
+  const sPriceMax = (search?.price_max ?? null) as number | null;
+
+  const keywords = extractSearchKeywords(search);
+
+  // ---- Marca (hasta 30 puntos) ----
+  if (sBrand && vBrand) {
+    if (vBrand === sBrand) {
+      score += 25;
+      reasons.push('Misma marca');
+    } else if (vBrand.includes(sBrand) || sBrand.includes(vBrand)) {
+      score += 15;
+      reasons.push('Marca similar');
+    } else {
+      reasons.push('Marca distinta a la buscada');
+    }
+  }
+
+  // ---- Modelo / texto libre (hasta 35 puntos) ----
+  if (keywords.length && (vTitle || vModel || vBrand)) {
+    const vTextLoose = normalizeLoose(
+      `${vehicle.brand || ''} ${vehicle.model || ''} ${vehicle.title || ''}`
+    );
+
+    let hits = 0;
+
+    for (const kw of keywords) {
+      const kwLoose = normalizeLoose(kw);
+      if (!kwLoose) continue;
+
+      if (vTextLoose.includes(kwLoose)) {
+        hits += 1;
+      }
+    }
+
+    if (hits > 0) {
+      // ⚙ Ajuste: subimos un poco el peso para que 1 keyword ya sea fuerte
+      const kwScore = Math.min(35, 20 + hits * 8); // 1 kw => 28, 2 kw => 36(capea en 35)
+      score += kwScore;
+      reasons.push(`Coincidencia de modelo / texto (${hits} palabra(s) clave)`);
+    } else if (sBrand && vBrand === sBrand) {
+      reasons.push('Misma marca pero modelo no explícito en la búsqueda');
+    }
+  }
+
+  // ---- Año (hasta 25 puntos) ----
+  if (typeof vYear === 'number') {
+    if (typeof sYearMin === 'number' && typeof sYearMax === 'number') {
+      if (vYear >= sYearMin && vYear <= sYearMax) {
+        score += 25;
+        reasons.push(`Año dentro del rango ${sYearMin}-${sYearMax}`);
+      } else if (
+        (vYear >= sYearMin - 1 && vYear < sYearMin) ||
+        (vYear > sYearMax && vYear <= sYearMax + 1)
+      ) {
+        score += 15;
+        reasons.push(`Año cercano al rango ${sYearMin}-${sYearMax}`);
+      }
+    } else if (typeof sYearMin === 'number') {
+      if (vYear >= sYearMin) {
+        score += 22;
+        reasons.push(`Año mayor o igual a ${sYearMin}`);
+      } else if (vYear === sYearMin - 1) {
+        score += 12;
+        reasons.push(`Año cercano a ${sYearMin}`);
+      }
+    } else if (typeof sYearMax === 'number') {
+      if (vYear <= sYearMax) {
+        score += 22;
+        reasons.push(`Año menor o igual a ${sYearMax}`);
+      } else if (vYear === sYearMax + 1) {
+        score += 12;
+        reasons.push(`Año cercano a ${sYearMax}`);
+      }
+    }
+  }
+
+  // ---- Precio (hasta 20 puntos) ----
+  if (typeof vPrice === 'number' && (sPriceMin != null || sPriceMax != null)) {
+    const min = sPriceMin ?? 0;
+    const max = sPriceMax ?? Number.POSITIVE_INFINITY;
+
+    if (vPrice >= min && vPrice <= max) {
+      score += 20;
+      reasons.push('Precio dentro del rango buscado');
+    } else {
+      // Penalización suave si está hasta 10–15% fuera del rango
+      const center = isFinite(max) ? (min + max) / 2 : min || vPrice;
+      const diff = Math.abs(vPrice - center);
+      const tolerance = center * 0.15; // 15%
+
+      if (diff <= tolerance) {
+        score += 10;
+        reasons.push('Precio cercano al rango buscado');
+      }
+    }
+  }
+
+  // Redondear y clamp 0–100
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+
+  return {
+    vehicle,
+    score: finalScore,
+    reasons,
+  };
+}
+
+/**
+ * Matchea un array de vehículos contra una búsqueda.
+ * Reglas:
+ * - Filtros "duros" por marca/año/precio si están definidos.
+ * - minScore dinámico:
+ *    - Si NO hay marca, año ni precio => minScore más bajo (20).
+ *    - Si hay 1 filtro (p.ej. solo marca) => ~45.
+ *    - Si hay 2–3 filtros => se mantiene alto (60).
  */
 export function matchVehiclesToSearch(
   vehicles: Vehicle[],
   search: any,
-  minScore: number = 10
+  baseMinScore: number = 60
 ): MatchResult[] {
   if (!vehicles || !vehicles.length) return [];
 
+  const sBrand = normalizeBrand(search?.brand || null);
+  const sYearMin = (search?.year_min ?? null) as number | null;
+  const sYearMax = (search?.year_max ?? null) as number | null;
+  const sPriceMin = (search?.price_min ?? null) as number | null;
+  const sPriceMax = (search?.price_max ?? null) as number | null;
+
+  const hasBrand = !!sBrand;
+  const hasYearRange = sYearMin != null || sYearMax != null;
+  const hasPriceRange = sPriceMin != null || sPriceMax != null;
+
+  const constraintCount = [hasBrand, hasYearRange, hasPriceRange].filter(
+    Boolean
+  ).length;
+
+  // ⚙ minScore dinámico según lo "apretada" que está la búsqueda
+  let effectiveMinScore = baseMinScore;
+  if (constraintCount === 0) {
+    // Solo texto (tu caso: "auto chico moby c3 fox corsa")
+    effectiveMinScore = 20;
+  } else if (constraintCount === 1) {
+    effectiveMinScore = 45;
+  } else if (constraintCount === 2) {
+    effectiveMinScore = 55;
+  } else {
+    effectiveMinScore = baseMinScore; // 3 filtros: muy exigente
+  }
+
   const results = vehicles
     .map((v) => scoreVehicleAgainstSearch(v, search))
-    // filtramos los que no llegan a un score mínimo (para no mostrar basura)
-    .filter((r) => r.score >= minScore)
+    .filter((res) => {
+      const v = res.vehicle;
+
+      const vBrand = normalizeBrand(v.brand);
+      const vYear = v.year ?? null;
+      const vPrice = v.price ?? null;
+
+      // --- Filtro duro por marca ---
+      if (hasBrand && vBrand && vBrand !== sBrand) {
+        return false;
+      }
+
+      // --- Filtro duro por año (±1 año de tolerancia) ---
+      if (typeof vYear === 'number' && (sYearMin != null || sYearMax != null)) {
+        if (sYearMin != null && vYear < sYearMin - 1) return false;
+        if (sYearMax != null && vYear > sYearMax + 1) return false;
+      }
+
+      // --- Filtro duro por precio (±15%) ---
+      if (typeof vPrice === 'number' && (sPriceMin != null || sPriceMax != null)) {
+        const minAllowed =
+          sPriceMin != null ? sPriceMin * 0.85 : vPrice; // si no hay min, no restringe por abajo
+        const maxAllowed =
+          sPriceMax != null ? sPriceMax * 1.15 : vPrice; // si no hay max, no restringe por arriba
+
+        if (vPrice < minAllowed || vPrice > maxAllowed) {
+          return false;
+        }
+      }
+
+      // --- Filtro por score mínimo dinámico ---
+      return res.score >= effectiveMinScore;
+    })
     .sort((a, b) => b.score - a.score);
 
   return results;

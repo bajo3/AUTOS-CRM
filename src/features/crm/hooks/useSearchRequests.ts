@@ -1,12 +1,24 @@
 // src/features/crm/hooks/useSearchRequests.ts
-// Hook para obtener y recargar todas las solicitudes de búsqueda.
+import { useEffect, useState, useCallback } from 'react';
+import { supabase } from '../../../lib/supabaseClient';
+import type {
+  Client,
+  ClientSearchRequest,
+} from '../api/clients';
 
-import { useCallback, useEffect, useState } from 'react';
-import type { ClientSearchRequest } from '../api/clients';
-import { fetchSearchRequests } from '../api/searches';
+export type SearchWithClient = ClientSearchRequest & {
+  client?: Client | null;
+};
 
-export function useSearchRequests() {
-  const [searches, setSearches] = useState<ClientSearchRequest[]>([]);
+type UseSearchRequestsResult = {
+  searches: SearchWithClient[];
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+};
+
+export function useSearchRequests(): UseSearchRequestsResult {
+  const [searches, setSearches] = useState<SearchWithClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,11 +26,28 @@ export function useSearchRequests() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchSearchRequests();
-      setSearches(data);
+      const { data, error: dbError } = await supabase
+        .from('search_requests')
+        .select(
+          `
+          *,
+          client:clients(*)
+        `
+        )
+        .order('created_at', { ascending: false });
+
+      if (dbError) {
+        console.error('[useSearchRequests] error', dbError);
+        setError(dbError.message || 'Error cargando búsquedas');
+        setSearches([]);
+        return;
+      }
+
+      setSearches((data || []) as SearchWithClient[]);
     } catch (e: any) {
-      console.error('Error cargando búsquedas', e);
+      console.error('[useSearchRequests] exception', e);
       setError(e?.message || 'Error cargando búsquedas');
+      setSearches([]);
     } finally {
       setLoading(false);
     }

@@ -10,6 +10,13 @@ export type Client = {
   created_at?: string | null;
 };
 
+export type ClientInsertPayload = {
+  full_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+};
+
 export type ClientSearchRequest = {
   id: string;
   client_id: string;
@@ -65,6 +72,70 @@ export async function fetchClientById(id: string): Promise<Client | null> {
   }
 
   return (data || null) as Client | null;
+}
+
+/**
+ * Crear cliente
+ */
+export async function createClient(
+  input: ClientInsertPayload
+): Promise<Client> {
+  const { data, error } = await supabase
+    .from('clients')
+    .insert({
+      full_name: input.full_name ?? null,
+      phone: input.phone ?? null,
+      email: input.email ?? null,
+      notes: input.notes ?? null,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Error creando cliente', error);
+    throw new Error(error.message || 'Error creando cliente');
+  }
+
+  return data as Client;
+}
+
+/**
+ * Actualizar cliente
+ */
+export async function updateClient(
+  id: string,
+  input: ClientInsertPayload
+): Promise<Client> {
+  const { data, error } = await supabase
+    .from('clients')
+    .update({
+      full_name: input.full_name ?? null,
+      phone: input.phone ?? null,
+      email: input.email ?? null,
+      notes: input.notes ?? null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Error actualizando cliente', error);
+    throw new Error(error.message || 'Error actualizando cliente');
+  }
+
+  return data as Client;
+}
+
+/**
+ * Eliminar cliente
+ */
+export async function deleteClient(id: string): Promise<void> {
+  const { error } = await supabase.from('clients').delete().eq('id', id);
+
+  if (error) {
+    console.error('Error eliminando cliente', error);
+    throw new Error(error.message || 'Error eliminando cliente');
+  }
 }
 
 /**
@@ -207,4 +278,17 @@ export async function createClientSearch(input: {
   }
 
   return data as ClientSearchRequest;
+}
+
+// Eliminar una búsqueda (search_request) por id
+export async function deleteClientSearch(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('search_requests')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error eliminando búsqueda', error);
+    throw new Error(error.message || 'Error eliminando búsqueda');
+  }
 }

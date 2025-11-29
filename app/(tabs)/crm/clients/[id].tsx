@@ -12,12 +12,22 @@ import {
   Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
-import type { Client } from '../../../../src/features/crm/api/clients';
+import { Ionicons } from '@expo/vector-icons';
+
+import type {
+  Client,
+  ClientSearchRequest,
+} from '../../../../src/features/crm/api/clients';
 import {
   fetchClientById,
   updateClient,
   deleteClient,
+  fetchClientSearches,
+  deleteClientSearch,
 } from '../../../../src/features/crm/api/clients';
+
+import { useVehicles } from '../../../../src/features/crm/hooks/useVehicles';
+import { matchVehiclesToSearch } from '../../../../src/features/matching/matchLogic';
 
 export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,7 +45,15 @@ export default function ClientDetailScreen() {
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
 
-  const load = useCallback(async () => {
+  // Búsquedas del cliente
+  const [searches, setSearches] = useState<ClientSearchRequest[]>([]);
+  const [searchesLoading, setSearchesLoading] = useState(false);
+  const [searchesError, setSearchesError] = useState<string | null>(null);
+
+  // Stock para calcular coincidencias
+  const { vehicles } = useVehicles();
+
+  const loadClient = useCallback(async () => {
     if (!id) {
       setError('Falta el ID del cliente.');
       setLoading(false);
@@ -64,9 +82,35 @@ export default function ClientDetailScreen() {
     }
   }, [id]);
 
+  const loadSearches = useCallback(
+    async (clientId: string) => {
+      setSearchesLoading(true);
+      setSearchesError(null);
+      try {
+        const data = await fetchClientSearches(clientId);
+        setSearches(data);
+      } catch (e: any) {
+        console.error('Error cargando búsquedas del cliente', e);
+        setSearchesError(
+          e?.message || 'Error cargando las búsquedas de este cliente'
+        );
+        setSearches([]);
+      } finally {
+        setSearchesLoading(false);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
-    load();
-  }, [load]);
+    loadClient();
+  }, [loadClient]);
+
+  useEffect(() => {
+    if (client?.id) {
+      loadSearches(client.id);
+    }
+  }, [client?.id, loadSearches]);
 
   const handleSave = async () => {
     if (!client || !id) return;
@@ -93,7 +137,7 @@ export default function ClientDetailScreen() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDeleteClient = () => {
     if (!id) return;
     Alert.alert(
       'Eliminar cliente',
@@ -149,6 +193,90 @@ export default function ClientDetailScreen() {
     });
   };
 
+  const handleDeleteSearch = (search: ClientSearchRequest) => {
+    if (!search.id) return;
+    Alert.alert(
+      'Eliminar búsqueda',
+      `¿Seguro que querés eliminar la búsqueda "${search.title || ''}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteClientSearch(search.id);
+              if (client?.id) {
+                loadSearches(client.id);
+              }
+            } catch (e: any) {
+              console.error('Error eliminando búsqueda', e);
+              Alert.alert(
+                'Error',
+                e?.message || 'No se pudo eliminar la búsqueda'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleWhatsAppForSearch = (
+    search: ClientSearchRequest,
+    matches: ReturnType<typeof matchVehiclesToSearch>
+  ) => {
+    if (!client?.phone) {
+      Alert.alert(
+        'Sin teléfono',
+        'Este cliente no tiene un teléfono cargado para WhatsApp.'
+      );
+      return;
+    }
+    const digits = client.phone.replace(/\D/g, '');
+    if (!digits) {
+      Alert.alert(
+        'Teléfono inválido',
+        'El teléfono del cliente no parece válido para WhatsApp.'
+      );
+      return;
+    }
+
+    const top = matches.slice(0, 3);
+    const autosTexto =
+      top.length > 0
+        ? top
+            .map((m) => {
+              const v = m.vehicle;
+              const titulo = v.title || `${v.brand || ''} ${v.model || ''}`.trim();
+              const year = v.year ? ` ${v.year}` : '';
+              const price =
+                typeof v.price === 'number'
+                  ? ` – $${v.price.toLocaleString('es-AR')}`
+                  : '';
+              return `• ${titulo}${year}${price}`;
+            })
+            .join('\n')
+        : 'Por ahora no tengo nada exacto, pero sigo atento al stock.';
+
+    const mensaje =
+      `Hola ${client.full_name || ''}, ` +
+      `te comparto opciones según lo que me comentaste: "${
+        search.title || 'búsqueda'
+      }".\n\n` +
+      autosTexto;
+
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(mensaje)}`;
+
+    Linking.openURL(url).catch((err) => {
+      console.error('Error abriendo WhatsApp desde búsqueda', err);
+      Alert.alert(
+        'Error',
+        'No se pudo abrir WhatsApp. Verificá que esté instalado.'
+      );
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -176,54 +304,38 @@ export default function ClientDetailScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>{client.full_name || '(Sin nombre)'}</Text>
-        {client.phone ? (
-          <Text style={styles.subtitle}>{client.phone}</Text>
-        ) : null}
-      </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{client.full_name || '(Sin nombre)'}</Text>
+          {client.phone ? (
+            <Text style={styles.subtitle}>{client.phone}</Text>
+          ) : null}
+        </View>
 
-      {/* Botones principales debajo del header */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.whatsappButton]}
-          onPress={handleWhatsApp}
-          disabled={!client.phone}
-        >
-          <Text style={styles.actionText}>WhatsApp</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, styles.editButton]}
-          onPress={() => setIsEditing((prev) => !prev)}
-          disabled={saving}
-        >
-          <Text style={styles.actionText}>
-            {isEditing ? 'Cancelar' : 'Editar'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
-          onPress={handleDelete}
-          disabled={saving}
-        >
-          <Text style={styles.actionText}>Eliminar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Link a nueva búsqueda */}
-      <View style={styles.section}>
-        <Link
-          href={{
-            pathname: '/(tabs)/crm/clients/[id]/new-search',
-            params: { id: client.id },
-          }}
-          asChild
-        >
-          <TouchableOpacity style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>+ Nueva búsqueda</Text>
+        {/* Botones rápidos en el header */}
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.headerButton, styles.headerButtonWhatsapp]}
+            onPress={handleWhatsApp}
+          >
+            <Ionicons name="logo-whatsapp" size={18} color="#f9fafb" />
           </TouchableOpacity>
-        </Link>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => setIsEditing((prev) => !prev)}
+          >
+            <Ionicons
+              name={isEditing ? 'close' : 'create-outline'}
+              size={18}
+              color="#f9fafb"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.headerButton, styles.headerButtonDanger]}
+            onPress={handleDeleteClient}
+          >
+            <Ionicons name="trash-outline" size={18} color="#f9fafb" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Datos del cliente */}
@@ -294,6 +406,130 @@ export default function ClientDetailScreen() {
           </>
         )}
       </View>
+
+      {/* Búsquedas de este cliente */}
+      <View style={styles.section}>
+        <View style={styles.searchesHeader}>
+          <Text style={styles.sectionTitle}>Búsquedas de este cliente</Text>
+          <Link
+            href={{
+              pathname: '/(tabs)/crm/clients/[id]/new-search',
+              params: { id: client.id },
+            }}
+            asChild
+          >
+            <TouchableOpacity style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>+ Nueva búsqueda</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
+
+        {searchesLoading ? (
+          <View style={styles.inlineLoading}>
+            <ActivityIndicator size="small" color="#60a5fa" />
+            <Text style={styles.loadingText}>Cargando búsquedas…</Text>
+          </View>
+        ) : null}
+
+        {searchesError ? (
+          <Text style={styles.errorSmall}>{searchesError}</Text>
+        ) : null}
+
+        {!searchesLoading && searches.length === 0 ? (
+          <Text style={styles.emptyText}>
+            Este cliente todavía no tiene búsquedas guardadas.
+          </Text>
+        ) : null}
+
+        {searches.map((search) => {
+          const matches = matchVehiclesToSearch(vehicles || [], search);
+          const top = matches.slice(0, 2);
+
+          return (
+            <View key={search.id} style={styles.searchCard}>
+              <View style={styles.searchHeaderRow}>
+                <Text style={styles.searchTitle}>
+                  {search.title || '(Sin título)'}
+                </Text>
+                <View style={styles.searchActionsRow}>
+                  {matches.length > 0 && client.phone ? (
+                    <TouchableOpacity
+                      style={styles.searchIconButton}
+                      onPress={() => handleWhatsAppForSearch(search, matches)}
+                    >
+                      <Ionicons
+                        name="logo-whatsapp"
+                        size={18}
+                        color="#25D366"
+                      />
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.searchIconButton, styles.searchDeleteButton]}
+                    onPress={() => handleDeleteSearch(search)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#fca5a5" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={styles.searchMeta}>
+                {search.brand || 'Cualquier marca'}
+                {search.year_min ? ` · desde ${search.year_min}` : ''}
+                {search.year_max ? ` · hasta ${search.year_max}` : ''}
+                {typeof search.price_min === 'number'
+                  ? ` · mín $${search.price_min.toLocaleString('es-AR')}`
+                  : ''}
+                {typeof search.price_max === 'number'
+                  ? ` · máx $${search.price_max.toLocaleString('es-AR')}`
+                  : ''}
+              </Text>
+
+              {search.description ? (
+                <Text style={styles.searchDescription}>
+                  {search.description}
+                </Text>
+              ) : null}
+
+              {matches.length > 0 ? (
+                <View style={styles.matchesBlock}>
+                  <Text style={styles.matchesTitle}>
+                    Coincidencias con tu stock: {matches.length}
+                  </Text>
+                  {top.map((m) => {
+                    const v = m.vehicle;
+                    const title =
+                      v.title ||
+                      `${v.brand || ''} ${v.model || ''}`.trim() ||
+                      v.id;
+                    const year = v.year ? ` (${v.year})` : '';
+                    const price =
+                      typeof v.price === 'number'
+                        ? ` – $${v.price.toLocaleString('es-AR')}`
+                        : '';
+                    return (
+                      <Text key={v.id} style={styles.matchRow}>
+                        • {title}
+                        {year}
+                        {price} ({m.score}/100)
+                      </Text>
+                    );
+                  })}
+                  {matches.length > top.length ? (
+                    <Text style={styles.matchRow}>
+                      …y {matches.length - top.length} más
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.noMatches}>
+                  No hay coincidencias con el stock actual.
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </View>
     </ScrollView>
   );
 }
@@ -319,6 +555,7 @@ function InfoRow({ label, value }: InfoRowProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#050816' },
+
   centered: {
     flex: 1,
     backgroundColor: '#050816',
@@ -333,6 +570,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
+  errorSmall: {
+    color: '#f97373',
+    fontSize: 12,
+    marginTop: 4,
+  },
   backButton: {
     marginTop: 8,
     paddingHorizontal: 16,
@@ -344,8 +586,11 @@ const styles = StyleSheet.create({
     color: '#f9fafb',
     fontWeight: '600',
   },
+
   header: {
-    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   title: {
     fontSize: 22,
@@ -357,36 +602,24 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 4,
   },
-  // fila de botones
-  actionRow: {
+  headerButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    backgroundColor: '#0f172a',
-    padding: 10,
-    borderRadius: 12,
+    marginLeft: 8,
   },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
+  headerButton: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#1f2937',
+    marginLeft: 4,
   },
-  actionText: {
-    color: '#f9fafb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  whatsappButton: {
-    backgroundColor: '#22c55e',
-  },
-  editButton: {
-    backgroundColor: '#334155',
-  },
-  deleteButton: {
+  headerButtonDanger: {
     backgroundColor: '#b91c1c',
   },
+  headerButtonWhatsapp: {
+    backgroundColor: '#16a34a',
+  },
+
   section: {
     marginTop: 20,
   },
@@ -394,8 +627,8 @@ const styles = StyleSheet.create({
     color: '#e5e7eb',
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 8,
   },
+
   label: {
     color: '#d1d5db',
     fontSize: 12,
@@ -429,6 +662,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -447,16 +681,94 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
   },
+
   secondaryButton: {
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: '#1f2937',
-    alignSelf: 'flex-start',
   },
   secondaryButtonText: {
     color: '#e5e7eb',
     fontWeight: '600',
     fontSize: 13,
+  },
+
+  searchesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  inlineLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  emptyText: {
+    marginTop: 8,
+    color: '#9ca3af',
+    fontSize: 12,
+  },
+
+  searchCard: {
+    marginTop: 10,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    padding: 10,
+  },
+  searchHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  searchTitle: {
+    color: '#f9fafb',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  searchActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchIconButton: {
+    padding: 6,
+    borderRadius: 999,
+    backgroundColor: '#1f2937',
+    marginLeft: 4,
+  },
+  searchDeleteButton: {
+    backgroundColor: '#451a1a',
+  },
+  searchMeta: {
+    color: '#9ca3af',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  searchDescription: {
+    color: '#d1d5db',
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  matchesBlock: {
+    marginTop: 6,
+  },
+  matchesTitle: {
+    color: '#60a5fa',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  matchRow: {
+    color: '#e5e7eb',
+    fontSize: 12,
+  },
+  noMatches: {
+    marginTop: 6,
+    color: '#9ca3af',
+    fontSize: 12,
   },
 });
